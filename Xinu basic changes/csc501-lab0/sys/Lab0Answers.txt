@@ -1,0 +1,132 @@
+1.
+
+|    free     |	
+|   memory    |
+|_____________|
+|  null proc  |0x00fffffc (base)	
+|   stack     |0x00ffff1c (stack pointer)
+|_____________|0x00fff000 (limit)
+|    main     |0x00ffeff8 (base)	
+|   stack     |0x00ffef60 (stack pointer)
+|_____________|0x00ffdffc (limit)
+|    heap     |	
+|_____________|0x00027318 (end / ebss)
+|    bss      |	
+|_____________|0x000215bc (edata)
+|   data      |	
+|_____________|0x0001ca64 (etext)
+|   text      |	
+|_____________|0
+
+2. 
+
+There is a difference of 8 bytes in stack top address before and after calling printtos().
+When function A calls function B, the following is pushed to the stack:
+1.	Parameter values to be passed to function B.
+2.	Return address
+3.	Old EBP value
+The return address and old EBP value take 4 bytes each. There are no parameters passed to the printtos function. Hence, there is a difference of 8 bytes in stack top address before and after calling printtos().
+
+|argument 3 |
+|___________| ebp + 16
+|argument 2 |
+|___________| ebp + 12
+|argument 1 |
+|___________| ebp + 8
+|return addr|
+|___________| ebp + 4
+|old ebp val|
+|___________| ebp
+|local var 1|
+|___________| ebp - 4
+|local var 2|
+|___________| ebp - 8
+
+Actual values are as follows:
+Before: 0x00ffefb0
+After: 0x00ffefa8
+The address of stack top before calling printtos() is greater than the address after calling printtos() because stack grows down in memory.
+
+
+3.
+
+The host machine has adopted the Little-Endian byte order.
+
+I stored the value 0x12345678 and used a character pointer to point to the address of this value. The first byte printed was 0x78, followed by 0x56, 0x34, 0x12. 
+
+Program:
+void byteOrderTest(){
+	long val = 0x12345678;
+	long *p = &val;
+	kprintf("\nPrinting: %ld %08x", p, *p);
+	char *bp = p;
+	kprintf("\nPrinting byte: %ld %08x", bp, *bp);
+	kprintf("\nPrinting byte: %ld %08x", bp+1, *(bp+1));
+	kprintf("\nPrinting byte: %ld %08x", bp+2, *(bp+2));
+	kprintf("\nPrinting byte: %ld %08x", bp+3, *(bp+3));
+}
+
+Output:
+
+Byte order test:
+Printing full byte: [16773012] 12345678
+Printing byte: [16773012] 00000078
+Printing byte: [16773013] 00000056
+Printing byte: [16773014] 00000034
+Printing byte: [16773015] 00000012
+
+
+4.
+
+a. mov: Move data between general-purpose registers; move data between memory and general-purpose or segment registers; move immediates to general-purpose registers
+b. push: Push onto stack
+c. pusha: Push general-purpose registers onto stack
+d. pop: Pop off of stack
+e. popa: Pop general-purpose registers from stack
+
+
+5.
+
+No, all the local variables declared are not shown. 
+In the below code (unnecessary parts are omitted):
+
+------
+int a=1,b=2,c=3;
+int numberOfContents = 0;
+
+while(esp < ebp && numberOfContents < 100){
+		kprintf("\n\telement[0x%08x]: 0x%08x", esp, *esp);	
+		esp = esp + 1;
+		numberOfContents++;
+}
+------
+
+Elements a, b, and c are stored on the stack, however, numberOfContents is not stored on the stack. This is because as part of code optimization, since the element numberOfContents is being accessed frequently (inside a loop), the compiler moves them somewhere else (probably to a register).
+
+Output for verification:
+-------
+Task 3
+Before[0x00ffefb0]: 0x0001d374
+After [0x00ffefa8]: 0x00ffefec
+        element[0x00ffef60]: 0x0001dcf4
+        element[0x00ffef64]: 0x00ffef60
+        element[0x00ffef68]: 0x00ffef60
+        element[0x00ffef6c]: 0x00ffefa8
+        element[0x00ffef70]: 0x00ffefec
+        element[0x00ffef74]: 0x00000000
+        element[0x00ffef78]: 0x00000006
+        element[0x00ffef7c]: 0x00017f26
+        element[0x00ffef80]: 0x00ffef9e
+        element[0x00ffef84]: 0x00ffefb4
+        element[0x00ffef88]: 0x00017f30
+        element[0x00ffef8c]: 0x00000003
+        element[0x00ffef90]: 0x00000002
+        element[0x00ffef94]: 0x00000001
+        element[0x00ffef98]: 0x00000064
+        element[0x00ffef9c]: 0x0000000f
+        element[0x00ffefa0]: 0x00000000
+        element[0x00ffefa4]: 0x00000000
+Number of contents: 18
+--------
+
+The variable numberOfContents with value 18 (0x12) is not found on the stack.

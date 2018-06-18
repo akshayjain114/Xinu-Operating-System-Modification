@@ -1,0 +1,221 @@
+1. 
+
+1. There are several approaches to solve the priority inversion problem. Most of these approaches deal with temporarily increasing the priority of the process that have acquired the lock.
+
+One such approach is 'Random boosting'. In this approach, the priority of ready tasks holding the locks is randomly increased, until they exit the critical section and give away the lock. 
+Thus, low-priority lock-holders get a chance to run long enough with boosted priority and release the locks sooner for higher priority threads waiting on the lock to acquire the locks and proceed. However, if the low priority threads do not get enough CPU time to exit the critical section the first time, it will get another chance earlier during the next round of scheduling.
+
+This solution is used in Windows NT. It solved the priority inversion problem by randomly boosting the dynamic priorities of threads that are ready to run.
+https://msdn.microsoft.com/en-us/library/windows/desktop/ms684831%28v=vs.85%29.aspx
+
+2. 
+
+The test case for priority inheritance is as follows: (This also tests the transitive nature of priority inheritance).
+
+void reader (char *msg, int lck)
+{
+        int     ret;
+
+        kprintf ("  %s: to acquire lock\n", msg);
+        lock (lck, READ, DEFAULT_LOCK_PRIO);
+        kprintf ("  %s: acquired lock\n", msg);
+	sleep(3);
+        kprintf ("  %s: to release lock\n", msg);
+        releaseall (1, lck);
+}
+
+void writer (char *msg, int lck)
+{
+        kprintf ("  %s: to acquire lock\n", msg);
+        lock (lck, WRITE, DEFAULT_LOCK_PRIO);
+        kprintf ("  %s: acquired lock, sleep 10s\n", msg);
+        sleep (10);
+        kprintf ("  %s: to release lock\n", msg);
+        releaseall (1, lck);
+}
+
+void mediumPriorityThread(char *msg){
+	resched();
+	int i;
+	for(i=0;i<10;i++){
+		kprintf("Medium priority thread is running\n");
+		sleep(1);
+	}
+}
+
+void test ()
+{
+        int     lck;
+        int     rd;
+        int     wr;
+	int	med;
+
+        kprintf("\nPriority inheritance test case\n");
+        lck  = lcreate ();
+        assert (lck != SYSERR, "Test failed");
+	
+        rd = create(reader, 2000, 20, "reader", 2, "reader", lck);
+        wr = create(writer, 2000, 40, "writer", 2, "writer", lck);
+	med = create(mediumPriorityThread, 2000, 30, "mediumPriorityThread", 1, "mediumPriorityThread");
+	
+	kprintf("-start reader, then sleep 1s. lock granted to reader (prio 20)\n");
+        resume(rd);
+        sleep (1);
+
+	kprintf("-start writer, then sleep 1s. writer(prio 40) blocked on the lock\n");
+        resume(wr);
+        sleep (1);
+	assert (getprio(rd) == 40, "Test failed");
+
+	kprintf("-start medium priority thread, then sleep 1s. medium priority thread runs\n");
+        resume(med);
+        sleep (1);
+
+	sleep(10);
+        kprintf ("Test OK\n");
+}
+
+//Test case with semaphore
+void sreader (char *msg, int sem)
+{
+        kprintf ("  %s: to wait on semaphore\n", msg);
+        wait (sem);
+        kprintf ("  %s: acquired semaphore\n", msg);
+	sleep(5);
+        kprintf ("  %s: to signal semaphore\n", msg);
+        signal (sem);
+}
+
+void swriter (char *msg, int sem)
+{
+        kprintf ("  %s: to wait on semaphore\n", msg);
+        wait (sem);
+        kprintf ("  %s: acquired semaphore\n", msg);
+	sleep(10);
+        kprintf ("  %s: to signal semaphore\n", msg);
+        signal (sem);
+}
+
+void smediumPriorityThread(char *msg){
+	resched();
+	int i;
+	for(i=0;i<10;i++){
+		kprintf("Medium priority thread is running\n");
+		sleep(1);
+	}
+}
+
+void stest ()
+{
+        int     sem;
+        int     rd;
+        int     wr;
+	int	med;
+
+        kprintf("\nSemaphore test\n");
+        sem  = screate (1);
+        assert (sem != SYSERR, "Test failed");
+	
+        rd = create(sreader, 2000, 20, "sreader", 2, "sreader", sem);
+        wr = create(swriter, 2000, 40, "swriter", 2, "swriter", sem);
+	med = create(smediumPriorityThread, 2000, 30, "smediumPriorityThread", 1, "smediumPriorityThread");
+	
+	kprintf("-start reader, then sleep 1s. semaphore granted to reader (prio 20)\n");
+        resume(rd);
+        sleep (1);
+
+	kprintf("-start writer, then sleep 1s. writer(prio 40) blocked on the semaphore\n");
+        resume(wr);
+        sleep (1);
+	assert (getprio(rd) == 20, "Test failed");
+
+	kprintf("-start medium priority thread, then sleep 1s. medium priority thread runs\n");
+        resume(med);
+        sleep (1);
+
+	sleep(10);
+        kprintf ("Test OK\n");
+}
+
+
+
+Priority inheritance test output:
+
+-start reader, then sleep 1s. lock granted to reader (prio 20)
+  reader: to acquire lock
+  reader: acquired lock
+-start writer, then sleep 1s. writer(prio 40) blocked on the lock
+  writer: to acquire lock
+-start medium priority thread, then sleep 1s. medium priority thread runs
+Medium priority thread is running
+Medium priority thread is running
+  reader: to release lock
+  writer: acquired lock, sleep 10s
+Medium priority thread is running
+Medium priority thread is running
+Medium priority thread is running
+Medium priority thread is running
+Medium priority thread is running
+Medium priority thread is running
+Medium priority thread is running
+Medium priority thread is running
+  writer: to release lock
+Test OK
+
+Semaphore test output:
+
+-start reader, then sleep 1s. semaphore granted to reader (prio 20)
+  sreader: to wait on semaphore
+  sreader: acquired semaphore
+-start writer, then sleep 1s. writer(prio 40) blocked on the semaphore
+  swriter: to wait on semaphore
+-start medium priority thread, then sleep 1s. medium priority thread runs
+Medium priority thread is running
+Medium priority thread is running
+Medium priority thread is running
+Medium priority thread is running
+  sreader: to signal semaphore
+  swriter: acquired semaphore
+Medium priority thread is running
+Medium priority thread is running
+Medium priority thread is running
+Medium priority thread is running
+Medium priority thread is running
+Medium priority thread is running
+Test OK
+
+
+As evidently seen in the output, the priority of the reader is boosted to 40. It runs to completion before medium priority thread, releases the lock and the writer is started before medium priority thread gets a chance to run. This shows that the priority inheritance approach can be used to solve the priority inversion problem
+When using semaphores, the medium priority thread gets more chance to run than the reader. Thus, the execution of writer is also delayed and this causes the priority inversion problem.
+
+2.
+
+As we see in the given code, the buffer access is not synchronized, and buffer is global (shared) data structure. 2 threads may get access to the same buffer location (since global_semaphore is a counting semaphore initialized to 10, and not a counting semaphore), and one of them may overwrite the data of the other.
+
+The lines from code from function buffer_add() that will create this issue is as follows:
+1. memcpy (buf->buf + buf->len, txt, size);
+2. buf->len += size;
+
+Note: Line numbers are written for reference for explanation below.
+
+Suppose 2 threads thread T1 and T2 are interleaved and execution is as follows:
+T1 executes line 1
+T2 executes line 1
+T1 executes line 2
+T2 executes line 2
+
+If buffer was as follows at the start of this interleaving:
+|_0_|_1_|_2_|_3_|__|__|__|__|__|
+buf->size = 9
+buf->len = 4
+
+When T1 executes line 1, it will write 4 (the actual timestamp) in the buffer
+|_0_|_1_|_2_|_3_|_4_|__|__|__|__|
+
+However, buf->len is still 4
+
+Therefore, when T2 executes line 1, it will overwrite the data written by T1
+|_0_|_1_|_2_|_3_|_5_|__|__|__|__|
+
+buf->len will be increased to 6 when both threads execute line 2. 
+The next data will be written at position 6 (7th position), and this will also leave an empty block.
